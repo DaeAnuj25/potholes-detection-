@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pothole-rover-vision"
+name = "pothole_rover"
 version = "0.1.0"
 description = "Grayscale pothole detection and calibrated range estimates for a rover"
 readme = "README.md"
@@ -20,6 +20,11 @@ dev = ["pytest>=8,<9"]
 [project.scripts]
 pothole-rover = "pothole_rover.cli:main"
 pothole-calibrate = "pothole_rover.calibrate:main"
+pothole_detector = "pothole_rover.ros_node:detector_main"
+pothole_dashboard = "pothole_rover.dashboard:main"
 
 [tool.setuptools.packages.find]
 include = ["pothole_rover*"]
+
+[tool.setuptools.package-data]
+pothole_rover = ["web/*.html"]

@@ -6,6 +6,11 @@ __pycache__/
 .venv/
 venv/
 
+# ROS 2 build outputs when building in the repository root
+/build/
+/install/
+/log/
+
 # Local runtime outputs
 /runs/
 /detections.jsonl

@@ -1,109 +1,162 @@
-# Pothole detection for a rover
+# Pothole Rover · ROS 2
 
-This repo now contains a small camera/video inference runner around the supplied
-Ultralytics model. It converts every incoming frame to grayscale before inference,
-samples at a default target of **5 FPS**, draws pothole detections, and can export
-per-frame JSONL telemetry. A separate calibration tool maps the nearest visible
-edge of a detected pothole to an approximate ground distance.
+This repo includes a ROS 2 pothole-perception node and a browser dashboard. The
+node subscribes to camera images, converts each processed frame to grayscale,
+runs the supplied Ultralytics model at a default target of 5 FPS, estimates
+pothole range when a calibration is supplied, and publishes JSON detection
+records. It can also publish an annotated image for other ROS tools to view.
 
 ## Model in this checkout
 
 The tracked checkpoint is named **`new_model.pt`** (there is no `best.pt` in the
-current checkout). The runner uses it by default; if you later add `best.pt`, it
-will prefer that file, or you can select any checkpoint with `--weights`. The
-checkpoint metadata identifies it as an Ultralytics YOLO11n detector with one
-class, `pothole`.
+current checkout). It is used by default; if a `best.pt` is copied into the
+package share directory, that file is preferred. The checkpoint metadata
+identifies an Ultralytics YOLO11n detector with one class, `pothole`.
 
-## Install
+Frames are converted to grayscale and then the grayscale values are repeated in
+three channels. This keeps the input shape expected by YOLO while ensuring the
+model sees grayscale rather than color.
 
-Use Python 3.10, 3.11, or 3.12. PyTorch/Ultralytics installation can take a while.
+## ROS 2 installation
+
+The package is an `ament_python` package. The commands below assume ROS 2 is
+already installed and the repo is at `~/ros2_ws/src/pothole_rover`.
 
 ```bash
-python -m venv .venv
-# Linux/macOS:
-source .venv/bin/activate
-# Windows PowerShell instead:
-# .venv\Scripts\Activate.ps1
+source /opt/ros/$ROS_DISTRO/setup.bash
+
+# Use a venv that can still see ROS's system Python packages (rclpy, colcon, etc.)
+python3 -m venv --system-site-packages ~/venvs/pothole-rover
+source ~/venvs/pothole-rover/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e .
+python -m pip install -r ~/ros2_ws/src/pothole_rover/requirements.txt
+
+cd ~/ros2_ws
+rosdep install --from-paths src --ignore-src -r -y
+python -m colcon build --symlink-install
+source install/setup.bash
 ```
 
-For development/tests, install `python -m pip install -e ".[dev]"`.
-Ultralytics chooses an available inference device automatically. You can force a
-device with `--device cpu` or, for example, `--device 0` when a compatible CUDA
-PyTorch installation is present.
+Keep the ROS environment and venv active when building and running. Installing `requirements.txt` brings in Ultralytics, PyTorch, OpenCV and NumPy;
+`colcon build` installs the ROS package and copies the model checkpoint into its
+share directory. Ultralytics uses a compatible GPU automatically when the
+installed PyTorch build supports it. The input and output ROS interfaces use
+standard message packages (`sensor_msgs` and `std_msgs`); no custom message
+package is needed.
 
-## Try the model
-
-Open the default camera (usually camera index `0`):
+## Run the ROS 2 detector
 
 ```bash
-python -m pothole_rover --source 0 --target-fps 5
+ros2 launch pothole_rover pothole_detector.launch.py \
+  image_topic:=/camera/image_raw \
+  image_type:=image \
+  detections_topic:=/pothole/detections \
+  target_fps:=5.0
 ```
 
-The preview is grayscale with colored boxes and confidence scores. Press **Q**
-or **Esc** to close it. Test another webcam with `--source 1`, a saved image with
-`--source pothole.jpg`, a video with `--source road.mp4`, or a stream URL such as
-`--source rtsp://camera-address/stream`.
+Use `weights:=/absolute/path/to/model.pt` or `device:=cpu` / `device:=0` to
+override the default model or inference device. The ROS launch defaults use
+`new_model.pt` from the installed package share directory.
 
-Save an annotated still and machine-readable detections:
+The input may be either:
+
+- `sensor_msgs/msg/Image` with `bgr8`, `rgb8`, `bgra8`, `rgba8`, or `mono8`
+  encoding; or
+- `sensor_msgs/msg/CompressedImage` (for example, a camera's
+  `/camera/image_raw/compressed` topic).
+
+For a compressed topic, set `image_type:=compressed`. The node uses depth-1,
+best-effort input QoS so it favors fresh camera frames instead of building a
+large queue. For a live stream it processes at most the configured target rate
+(default **5 inferences per second**) and drops excess frames. Achieved rate
+still depends on the rover's CPU/GPU; if one inference takes longer than 200 ms,
+5 FPS cannot be sustained. The node reports inference time and frame counts in
+its logs/dashboard.
+
+Inspect the detection output with:
 
 ```bash
-python -m pothole_rover \
-  --source pothole.jpg \
-  --save-image runs/pothole-annotated.jpg \
-  --jsonl runs/pothole-detections.jsonl
+ros2 topic echo /pothole/detections
+ros2 topic info /pothole/annotated
 ```
 
-Process a video without a display, saving an annotated video and JSONL output:
+### Detection message contract
+
+The detections topic is `std_msgs/msg/String`. Each processed frame publishes one
+JSON object, including frames with no detections. A record contains the source
+topic, frame index, source image size, inference time and an array of potholes.
+Each pothole includes its class, confidence, pixel box, nearest-edge pixel row,
+range fields and calibration status. Before calibration, range values are
+`null`; after calibration, an in-range pothole resembles:
+
+```json
+{
+  "class_name": "pothole",
+  "confidence": 0.91,
+  "box_xyxy_px": [210, 180, 392, 335],
+  "closest_edge_pixel_y": 335,
+  "distance_from_rover_front_m": 1.27,
+  "distance_from_camera_ground_m": 1.45,
+  "distance_from_camera_center_m": 1.51,
+  "distance_status": "within_calibration_range"
+}
+```
+
+The node also publishes the annotated grayscale frame as
+`sensor_msgs/msg/Image` on `/pothole/annotated` by default. Set
+`annotated_topic:=` (empty) to disable that publisher.
+
+## Linux dashboard
+
+Run the combined detector and dashboard node (this launch already runs
+inference, so do not also launch `pothole_detector` unless you want a second
+model instance):
 
 ```bash
-python -m pothole_rover \
-  --source road-test.mp4 \
-  --headless \
-  --save-video runs/road-test-annotated.mp4 \
-  --jsonl runs/road-test-detections.jsonl
+ros2 launch pothole_rover pothole_dashboard.launch.py
 ```
 
-Other useful options: `--weights path/to/best.pt`, `--confidence 0.35`,
-`--image-size 640`, `--device cpu`, `--width 1280 --height 720`, and
-`--jsonl -` to write JSONL records to stdout. Run `python -m pothole_rover --help`
-for the full list.
+Open **http://127.0.0.1:8080** on the Linux machine. The page discovers image
+and String topics from the ROS graph. From the dashboard you can:
 
-### FPS behavior
+- select a discovered image topic or type an absolute topic name;
+- choose raw `Image` or `CompressedImage` input;
+- choose an existing String topic or enter a new detections output topic;
+- change target FPS and confidence without restarting the node;
+- enter a path to a calibration JSON when it is ready;
+- view the grayscale annotated preview, live pothole list, confidence, range,
+  inference time, processed FPS, received/dropped frames and node status.
 
-For a live camera/stream, the runner drops frames and starts no more than five
-inferences per wall-clock second by default. It asks the capture backend for a
-one-frame buffer when supported, to reduce stale-frame buildup. For video files,
-it samples approximately five frames per **source-video** second. Change this
-with `--target-fps`.
+The web server binds to localhost by default. If you intentionally want to use it
+from another device on a trusted network, launch with
+`dashboard_host:=0.0.0.0 dashboard_port:=8080` and configure your firewall
+accordingly. The dashboard has no authentication, so do not expose it to an
+untrusted network.
 
-Five FPS is a target/maximum, not a hardware guarantee: if one inference takes
-longer than 200 ms, the rover computer cannot sustain five inferences per second.
-The console and preview report inference time and achieved processing rate. Try a
-smaller `--image-size` or a faster device if the achieved rate is too low.
+“Any topic” here means any ROS topic advertising one of the supported image
+message types. The output publisher uses `std_msgs/msg/String` with the JSON
+contract above; the chosen topic must not already be advertised with a different
+message type. A custom ROS message can be added later if the rest of the rover
+project needs a typed interface.
 
-## Calibrate range for your fixed camera
+## Calibrate range for the fixed camera
 
-A box's pixel width/area is not a dependable distance cue when potholes have
-different real sizes. This implementation instead uses the **vertical image row
-of the box's bottom-center** (the nearest visible edge) and your measured ground
-distances. With a rigid camera looking at a roughly flat surface, perspective
-makes that row a useful range cue. The calibration is an empirical,
-piecewise-linear mapping; it does not need a separately measured camera angle.
+A pothole's pixel width or area is not a dependable distance cue because holes
+have different real-world sizes. This implementation instead maps the vertical
+image row of the detection box's **bottom-center** (the nearest visible edge) to
+known ground distances. With a rigid camera looking at a roughly flat surface,
+perspective makes that row a useful range cue. The calibration is a measured,
+piecewise-linear mapping, so the camera's fixed angle is accounted for by the
+samples rather than needing to be entered manually.
 
-1. Mount the camera in its final position. Keep camera height, pitch, lens/zoom,
-   crop, resolution and rover posture fixed afterwards.
-2. On a flat test surface, take at least 3 (ideally 4–8) images with clear ground
-   points at known distances spanning the area you care about. Measure each
-   distance **forward from the rover's front edge**. Keep every image at the same
-   resolution. A visible marker works well; for pothole images, choose the
-   nearest visible edge consistently.
-3. Run the tool once per image. In each window click the known ground point (or
-   the pothole's nearest edge). The tool records the clicked image row and the
-   known rover-front distance, then writes `calibration.json`.
-
-Example (replace the image names and distances with your own measurements):
+1. Mount the camera in its final position. Keep height, pitch, lens/zoom, crop,
+   resolution and rover posture fixed afterwards.
+2. Take at least 3 (ideally 4–8) same-resolution images of ground points at known
+   distances spanning the area you care about. Measure each distance **forward
+   from the rover's front edge**. A marker on flat ground works well; if using
+   pothole images, click the nearest visible edge consistently.
+3. Run the calibration tool once per image and click the known point in each
+   window. The resulting JSON is specific to that camera setup.
 
 ```bash
 python -m pothole_rover.calibrate \
@@ -116,55 +169,41 @@ python -m pothole_rover.calibrate \
   --output calibration.json
 ```
 
-`--camera-to-rover-front-m` is the horizontal distance from the camera's vertical
-ground projection to the rover front: use a **positive** value when the camera is
-behind the front edge (for example, 0.18 m). With it set, each record also gets a
-camera-ground distance. If `--camera-height-m` is supplied too, the runner also
-reports the approximate straight-line distance from the camera center to the
-pothole's nearest ground point. Leave either option out if you do not know it;
-unknown camera-relative ranges are reported as `null`, not guessed.
+Replace the example distances and camera dimensions with real measurements. The
+`camera-to-rover-front` value is the horizontal distance from the camera's
+vertical ground projection to the rover front; it is positive when the camera is
+behind the front edge. With this value, the node reports camera-ground distance.
+With camera height supplied too, it also reports the approximate straight-line
+range from the camera center to the nearest ground point. Unknown camera-relative
+ranges stay `null` rather than being guessed.
 
-Then run the live camera with the saved map:
+Use the resulting file in the dashboard's calibration path field, or launch the
+node with `calibration_file:=/absolute/path/to/calibration.json`. Rows outside
+the calibrated span are reported as bounds (`<=` near the rover or `>=` beyond
+the farthest sample) instead of extrapolating.
+
+This is a **ground-plane estimate to the nearest visible pothole edge**, not a
+measurement of the depth inside the hole. Strong slopes, uneven terrain, a
+shifted camera mount, or a box edge that is not on the surface reduce accuracy.
+The model detects potholes only; it is not a general obstacle detector and does
+not control rover motors.
+
+## Standalone testing (without ROS)
+
+For a quick local model test, install the Python runtime requirements and use the
+original CLI:
 
 ```bash
-python -m pothole_rover \
-  --source 0 \
-  --target-fps 5 \
-  --calibration calibration.json \
-  --jsonl runs/rover-detections.jsonl
+python -m pip install -r requirements.txt
+python -m pothole_rover --source 0 --target-fps 5
+python -m pothole_rover --source pothole.jpg --save-image runs/annotated.jpg
+python -m pothole_rover --source road-test.mp4 --headless \
+  --save-video runs/annotated.mp4 --jsonl runs/detections.jsonl
 ```
 
-Out-of-range image rows are reported as a bound (for example, `<= 0.50 m` or
-`>= 3.50 m`) instead of extrapolating beyond the measured area. The calibration
-file is ordinary JSON and can be inspected or edited if you have already
-measured the image rows.
-
-### What the distance means (and does not mean)
-
-The main range is a **ground-plane estimate from the rover's front edge to the
-nearest visible pothole edge**. The optional camera distances are also ground
-plane/slant estimates, as described above. It is not a measurement of the depth
-inside the hole. This assumption becomes less accurate on strongly uneven or
-sloped ground, when the mount shifts, or when the bottom of the detection box is
-not on the ground surface. Out-of-calibration detections remain detections, but
-the range is only a bound.
-
-## JSONL output
-
-Each processed frame produces one line. Detection records include class,
-confidence, pixel box, nearest-edge row, distance/status, and optional
-camera-relative ranges. For example, before range calibration the distance
-fields are `null`; after calibration, an in-range record resembles:
-
-```json
-{"class_name":"pothole","confidence":0.91,"box_xyxy_px":[210,180,392,335],"closest_edge_pixel_y":335,"distance_from_rover_front_m":1.27,"distance_from_camera_ground_m":1.45,"distance_from_camera_center_m":1.51,"distance_status":"within_calibration_range"}
-```
-
-The stream is suitable for a separate rover-control process to consume. This
-runner deliberately does **not** command motors or decide braking behavior.
-Test at low speed, add a fail-safe for missing/stale detections, and do not treat
-one camera/model as a guaranteed safety system. The current checkpoint detects
-potholes only; it is not an obstacle or general terrain detector.
+Use `--weights path/to/best.pt`, `--device cpu`, `--confidence 0.35`, or
+`--image-size 640` as needed. Run `python -m pothole_rover --help` for all
+standalone options.
 
 ## Tests
 
