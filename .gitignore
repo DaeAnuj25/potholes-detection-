@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# ROS 2 build outputs when building in the repository root
+/build/
+/install/
+/log/
+
+# Local runtime outputs
+/runs/
+/detections.jsonl
+/annotated.mp4

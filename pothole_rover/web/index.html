@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pothole Rover · ROS 2 Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #10141c;
+      --panel: #191f2b;
+      --panel-2: #202938;
+      --line: #303b4c;
+      --text: #edf2f8;
+      --muted: #9eacbf;
+      --green: #53dfa1;
+      --amber: #ffc56a;
+      --red: #ff737b;
+      --blue: #8daeff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(ellipse at top left, #1a2735 0, var(--bg) 48%);
+      color: var(--text);
+      font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      padding: 22px clamp(18px, 4vw, 54px);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: rgba(16, 20, 28, .76);
+    }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .mark {
+      width: 42px; height: 42px; border-radius: 13px;
+      display: grid; place-items: center;
+      background: linear-gradient(145deg, #244c49, #1d2c45);
+      color: var(--green); font-size: 22px; font-weight: 800;
+      border: 1px solid #42625f;
+    }
+    h1 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
+    .subtitle { color: var(--muted); margin-top: 3px; font-size: 12px; }
+    main { padding: 24px clamp(18px, 4vw, 54px) 42px; max-width: 1600px; margin: auto; }
+    .topline { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 18px; }
+    .eyebrow { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .12em; }
+    .status {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px;
+      background: var(--panel); color: var(--muted); font-size: 12px; font-weight: 700;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #8491a2; }
+    .status.running { color: var(--green); border-color: #31614f; }
+    .status.running .dot { background: var(--green); box-shadow: 0 0 12px #53dfa177; }
+    .status.error, .status.configuration_error { color: var(--red); border-color: #633c48; }
+    .status.error .dot, .status.configuration_error .dot { background: var(--red); }
+    .status.stale_image { color: var(--amber); border-color: #665536; }
+    .grid { display: grid; grid-template-columns: minmax(320px, .82fr) minmax(440px, 1.55fr); gap: 18px; align-items: start; }
+    .panel {
+      background: linear-gradient(160deg, rgba(29, 37, 51, .96), rgba(22, 28, 39, .96));
+      border: 1px solid var(--line); border-radius: 17px; overflow: hidden;
+      box-shadow: 0 16px 45px rgba(0, 0, 0, .2);
+    }
+    .panel-head { padding: 17px 19px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .panel-head h2 { margin: 0; font-size: 15px; }
+    .panel-body { padding: 18px 19px; }
+    .form-row { margin-bottom: 14px; }
+    label { display: block; font-size: 12px; font-weight: 700; color: #cad4e2; margin-bottom: 6px; }
+    input, select {
+      width: 100%; height: 39px; padding: 0 11px; border-radius: 9px;
+      background: #101722; color: var(--text); border: 1px solid #39465a; outline: none;
+      font: inherit;
+    }
+    input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #8daeff20; }
+    .hint { margin-top: 5px; font-size: 11px; color: var(--muted); }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+    button {
+      height: 39px; padding: 0 14px; border-radius: 9px; border: 1px solid #52689a;
+      background: linear-gradient(135deg, #35558d, #354879); color: white;
+      font: inherit; font-weight: 750; cursor: pointer;
+    }
+    button:hover { filter: brightness(1.12); }
+    button.secondary { background: var(--panel-2); border-color: var(--line); color: #d5dfed; }
+    .buttons { display: flex; gap: 9px; margin-top: 18px; }
+    .buttons button:first-child { flex: 1; }
+    .small-note { color: var(--muted); font-size: 11px; margin-top: 14px; }
+    .message { margin-top: 12px; min-height: 18px; font-size: 12px; color: var(--amber); }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(100px,1fr)); gap: 10px; margin-bottom: 16px; }
+    .metric { background: #121925; border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; min-width: 0; }
+    .metric .name { color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+    .metric .value { margin-top: 6px; font-size: 19px; font-weight: 760; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .metric .unit { color: var(--muted); font-size: 11px; font-weight: 500; margin-left: 3px; }
+    .preview-wrap { min-height: 240px; background: #0b0f15; display: grid; place-items: center; position: relative; }
+    #preview { width: 100%; display: none; max-height: 560px; object-fit: contain; }
+    #empty-preview { color: #76869c; text-align: center; padding: 50px 20px; }
+    .stream-label { position: absolute; left: 12px; top: 12px; background: #0a0e15df; border: 1px solid #3c4758; border-radius: 7px; padding: 5px 8px; font-size: 10px; color: #d2dbea; letter-spacing: .06em; }
+    .last-image { color: var(--muted); font-size: 11px; }
+    .detection-head { margin: 19px 0 9px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .detection-head h3 { margin: 0; font-size: 13px; }
+    .count-pill { border: 1px solid #43614d; background: #173327; color: var(--green); padding: 3px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+    .detections { display: grid; gap: 8px; }
+    .detection-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); background: #121925; border-radius: 11px; padding: 11px 13px; }
+    .det-name { font-weight: 750; }
+    .det-sub { color: var(--muted); font-size: 11px; margin-top: 3px; }
+    .det-distance { text-align: right; color: var(--green); font-weight: 750; white-space: nowrap; }
+    .empty-detections { border: 1px dashed #39465a; border-radius: 11px; color: var(--muted); padding: 15px; text-align: center; }
+    .error { color: var(--red); }
+    footer { margin-top: 18px; color: var(--muted); font-size: 11px; }
+    @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 580px) { header { align-items: flex-start; } .topline { align-items: flex-start; flex-direction: column; } .metrics { grid-template-columns: repeat(2, 1fr); } .two { grid-template-columns: 1fr; gap: 0; } .panel-body { padding: 15px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="mark">R</div>
+      <div><h1>Pothole Rover</h1><div class="subtitle">ROS 2 perception · grayscale detection · ground-range estimate</div></div>
+    </div>
+    <div id="status" class="status"><span class="dot"></span><span id="status-text">Connecting</span></div>
+  </header>
+  <main>
+    <div class="topline">
+      <div><div class="eyebrow">Live operations</div><div class="subtitle" id="node-name">ROS node starting…</div></div>
+      <div class="last-image" id="last-image">Waiting for a camera frame</div>
+    </div>
+    <div class="grid">
+      <section class="panel">
+        <div class="panel-head"><h2>ROS topic &amp; processing setup</h2><button class="secondary" id="refresh-topics">Refresh topics</button></div>
+        <div class="panel-body">
+          <div class="form-row">
+            <label for="known-image-topic">Discovered image topics</label>
+            <select id="known-image-topic"><option value="">No image topics discovered</option></select>
+            <div class="hint">Supports sensor_msgs/msg/Image and sensor_msgs/msg/CompressedImage.</div>
+          </div>
+          <div class="form-row">
+            <label for="image-topic">Input image topic</label>
+            <input id="image-topic" value="/camera/image_raw" placeholder="/camera/image_raw">
+          </div>
+          <div class="form-row">
+            <label for="image-type">Input message type</label>
+            <select id="image-type">
+              <option value="image">sensor_msgs/msg/Image (raw)</option>
+              <option value="compressed">sensor_msgs/msg/CompressedImage</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="known-output-topic">Existing JSON output topics</label>
+            <select id="known-output-topic"><option value="">Type a new output topic below</option></select>
+          </div>
+          <div class="form-row">
+            <label for="output-topic">Publish detections to</label>
+            <input id="output-topic" value="/pothole/detections" placeholder="/pothole/detections">
+            <div class="hint">The node publishes std_msgs/msg/String containing one JSON record per processed frame.</div>
+          </div>
+          <div class="two">
+            <div class="form-row">
+              <label for="target-fps">Target processing rate (FPS)</label>
+              <input id="target-fps" type="number" min="0.1" max="60" step="0.1" value="5">
+            </div>
+            <div class="form-row">
+              <label for="confidence">Confidence threshold</label>
+              <input id="confidence" type="number" min="0" max="1" step="0.01" value="0.25">
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="calibration-file">Calibration JSON path (optional)</label>
+            <input id="calibration-file" placeholder="/home/rover/calibration.json">
+            <div class="hint">Path is read by the ROS node process. Leave blank until your camera calibration is ready.</div>
+          </div>
+          <div class="buttons">
+            <button id="apply">Apply settings</button>
+          </div>
+          <div id="message" class="message"></div>
+          <div class="small-note">Image callbacks use a depth-1, best-effort QoS to prefer fresh frames. The output topic is created if it does not already exist.</div>
+        </div>
+      </section>
+
+      <section>
+        <div class="metrics">
+          <div class="metric"><div class="name">Processed rate</div><div class="value"><span id="actual-fps">—</span><span class="unit">FPS</span></div></div>
+          <div class="metric"><div class="name">Inference</div><div class="value"><span id="inference-ms">—</span><span class="unit">ms</span></div></div>
+          <div class="metric"><div class="name">Potholes / frame</div><div class="value"><span id="detection-count">0</span></div></div>
+          <div class="metric"><div class="name">Dropped frames</div><div class="value"><span id="dropped-frames">0</span></div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Annotated camera view</h2><span class="subtitle" id="active-input">No input selected</span></div>
+          <div class="preview-wrap">
+            <span class="stream-label" id="stream-label">GRAY MODEL INPUT · 5 FPS TARGET</span>
+            <img id="preview" alt="Live annotated camera frame">
+            <div id="empty-preview">Waiting for the first processed frame.<br>Choose a discovered image topic and apply.</div>
+          </div>
+          <div class="panel-body">
+            <div class="detection-head"><h3>Latest frame detections</h3><span id="count-pill" class="count-pill">0 holes</span></div>
+            <div id="detections" class="detections"><div class="empty-detections">No processed frame yet.</div></div>
+            <footer id="frame-meta">Distance is uncalibrated until a calibration JSON is supplied.</footer>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:18px">
+          <div class="panel-head"><h2>Runtime details</h2><span class="subtitle">ROS graph</span></div>
+          <div class="panel-body">
+            <div class="two">
+              <div><div class="hint">Model</div><div id="model-path">—</div></div>
+              <div><div class="hint">Annotated image topic</div><div id="annotated-topic-value">—</div></div>
+            </div>
+            <div class="two" style="margin-top:14px">
+              <div><div class="hint">Received / processed frames</div><div id="frame-counts">0 / 0</div></div>
+              <div><div class="hint">Time since last image</div><div id="image-age">—</div></div>
+            </div>
+            <div id="last-error" class="message error"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  let previewAvailable = false;
+  let configurationDirty = false;
+  let pendingRequestId = null;
+
+  for (const id of ['known-image-topic', 'image-topic', 'image-type', 'known-output-topic', 'output-topic', 'target-fps', 'confidence', 'calibration-file']) {
+    $(id).addEventListener('input', () => { configurationDirty = true; });
+    $(id).addEventListener('change', () => { configurationDirty = true; });
+  }
+
+  async function refreshTopics() {
+    const response = await fetch('/api/topics', {cache: 'no-store'});
+    const data = await response.json();
+    const images = $('known-image-topic');
+    images.replaceChildren(new Option('Choose a discovered image topic…', ''));
+    for (const topic of data.image_topics || []) {
+      const label = `${topic.name} · ${topic.ros_type}`;
+      const option = new Option(label, topic.name);
+      option.dataset.imageType = topic.image_type;
+      images.add(option);
+    }
+    const outputs = $('known-output-topic');
+    outputs.replaceChildren(new Option('Type a new output topic below', ''));
+    for (const topic of data.string_topics || []) outputs.add(new Option(topic, topic));
+  }
+
+  $('known-image-topic').addEventListener('change', (event) => {
+    const option = event.target.selectedOptions[0];
+    if (!option || !option.value) return;
+    $('image-topic').value = option.value;
+    $('image-type').value = option.dataset.imageType || 'image';
+  });
+  $('known-output-topic').addEventListener('change', (event) => {
+    if (event.target.value) $('output-topic').value = event.target.value;
+  });
+  $('refresh-topics').addEventListener('click', () => refreshTopics().catch(showError));
+
+  $('apply').addEventListener('click', async () => {
+    $('message').textContent = 'Applying settings…';
+    const payload = {
+      image_topic: $('image-topic').value,
+      image_type: $('image-type').value,
+      detections_topic: $('output-topic').value,
+      target_fps: Number($('target-fps').value),
+      confidence: Number($('confidence').value),
+      calibration_file: $('calibration-file').value
+    };
+    try {
+      const response = await fetch('/api/configure', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not apply settings');
+      pendingRequestId = result.request_id;
+      $('message').textContent = `Configuration request ${result.request_id} queued.`;
+      setTimeout(updateState, 250);
+    } catch (error) { showError(error); }
+  });
+
+  function showError(error) { $('message').textContent = error.message || String(error); }
+  function distanceLabel(detection) {
+    const value = detection.distance_from_rover_front_m;
+    if (value === null || value === undefined) return 'Uncalibrated';
+    const status = detection.distance_status;
+    const prefix = status === 'beyond_near_range' ? '≤ ' : status === 'beyond_far_range' ? '≥ ' : '≈ ';
+    return `${prefix}${Number(value).toFixed(2)} m from rover front`;
+  }
+  function renderDetections(event) {
+    const detections = (event && event.detections) || [];
+    $('detection-count').textContent = detections.length;
+    $('count-pill').textContent = `${detections.length} ${detections.length === 1 ? 'hole' : 'holes'}`;
+    const container = $('detections');
+    container.replaceChildren();
+    if (!detections.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-detections';
+      empty.textContent = event ? 'No potholes detected in the latest processed frame.' : 'No processed frame yet.';
+      container.append(empty);
+      return;
+    }
+    for (const detection of detections) {
+      const card = document.createElement('div');
+      card.className = 'detection-card';
+      const cameraDistance = detection.distance_from_camera_center_m != null
+        ? `camera slant ${Number(detection.distance_from_camera_center_m).toFixed(2)} m`
+        : detection.distance_from_camera_ground_m != null
+          ? `camera ground ${Number(detection.distance_from_camera_ground_m).toFixed(2)} m`
+          : '';
+      const camera = cameraDistance ? ` · ${cameraDistance}` : '';
+      const box = (detection.box_xyxy_px || []).map((n) => Math.round(n)).join(', ');
+      card.innerHTML = `<div><div class="det-name">${esc(detection.class_name)} · ${Math.round(Number(detection.confidence) * 100)}%</div><div class="det-sub">Box [x1, y1, x2, y2]: ${esc(box)}${esc(camera)}</div></div><div class="det-distance">${esc(distanceLabel(detection))}</div>`;
+      container.append(card);
+    }
+  }
+
+  function updatePreview() {
+    if (previewAvailable) $('preview').src = `/api/preview.jpg?t=${Date.now()}`;
+  }
+
+  async function updateState() {
+    try {
+      const response = await fetch('/api/state', {cache: 'no-store'});
+      const state = await response.json();
+      $('node-name').textContent = state.node_name || 'ROS node';
+      const status = $('status');
+      status.className = `status ${state.status || ''}`;
+      $('status-text').textContent = (state.status || 'unknown').replaceAll('_', ' ');
+      $('active-input').textContent = state.image_topic ? `${state.image_topic} · ${state.image_type}` : 'No input selected';
+      $('actual-fps').textContent = Number(state.actual_fps || 0).toFixed(1);
+      $('inference-ms').textContent = state.inference_ms == null ? '—' : Number(state.inference_ms).toFixed(0);
+      $('dropped-frames').textContent = state.dropped_frames ?? 0;
+      $('model-path').textContent = state.weights || '—';
+      $('annotated-topic-value').textContent = state.annotated_topic || 'disabled';
+      $('frame-counts').textContent = `${state.input_frames ?? 0} / ${state.processed_frames ?? 0}`;
+      $('image-age').textContent = state.seconds_since_image == null ? '—' : `${Number(state.seconds_since_image).toFixed(1)} s`;
+      $('last-image').textContent = state.seconds_since_image == null ? 'Waiting for a camera frame' : `Last image ${Number(state.seconds_since_image).toFixed(1)} s ago`;
+      $('last-error').textContent = state.last_error || '';
+      const configState = state.configuration || {};
+      if (pendingRequestId !== null && configState.id === pendingRequestId) {
+        if (configState.status === 'applied') {
+          pendingRequestId = null;
+          configurationDirty = false;
+          $('message').textContent = configState.message || 'Settings applied.';
+        } else if (configState.status === 'error') {
+          pendingRequestId = null;
+          $('message').textContent = configState.message || 'Could not apply settings.';
+        }
+      }
+      if (!configurationDirty && pendingRequestId === null) {
+        if (state.image_topic) $('image-topic').value = state.image_topic;
+        if (state.image_type) $('image-type').value = state.image_type;
+        if (state.detections_topic) $('output-topic').value = state.detections_topic;
+        if (state.target_fps) $('target-fps').value = state.target_fps;
+        if (state.confidence !== undefined) $('confidence').value = state.confidence;
+        $('calibration-file').value = state.calibration_file || '';
+      }
+      $('stream-label').textContent = `GRAY MODEL INPUT · target ${state.target_fps || 5} FPS`;
+      renderDetections(state.last_event);
+      $('frame-meta').textContent = state.calibration_file
+        ? `Calibration: ${state.calibration_file} · published output: std_msgs/msg/String JSON`
+        : 'Distance uncalibrated · add a calibration JSON path when your fixed-camera calibration is ready.';
+      previewAvailable = Boolean(state.preview_available);
+      if (previewAvailable) {
+        $('preview').style.display = 'block';
+        $('empty-preview').style.display = 'none';
+        updatePreview();
+      } else {
+        $('preview').style.display = 'none';
+        $('empty-preview').style.display = 'block';
+      }
+    } catch (error) { $('status-text').textContent = 'Dashboard API error'; }
+  }
+
+  refreshTopics().catch(showError);
+  updateState();
+  setInterval(updateState, 1000);
+  setInterval(updatePreview, 200);
+</script>
+</body>
+</html>
